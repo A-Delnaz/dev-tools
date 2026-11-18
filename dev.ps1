@@ -1,5 +1,5 @@
 # =================================================================
-#  dev.ps1 v2.1.0 - one developer tool for every project
+#  dev.ps1 v2.2.0 - one developer tool for every project
 #
 #  Started by dev.cmd in the project folder. This file is NOT copied
 #  into projects: it lives in github.com/A-Delnaz/dev-tools and dev.cmd
@@ -23,7 +23,7 @@ param(
     [string]$Command = ""
 )
 
-$ToolVersion = "2.1.0"
+$ToolVersion = "2.2.0"
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -945,18 +945,20 @@ function Publish-Branch {
     Write-Ok "Published to '$pub'. Now use the update button of the site on the server."
 }
 
+# The version to publish: VERSION file, or releases.json, or installer\version.txt (see Get-AppVersion)
 function Get-TagVersion {
-    $file = Join-Path $Root "VERSION"
-    if (-not (Test-Path $file)) { return $null }
-    $v = (Get-Content $file -Raw).Trim()
-    if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "VERSION file is not valid: '$v'" }
+    $v = Get-AppVersion
+    if (-not $v) { return $null }
+    if ($v -notmatch '^\d+\.\d+\.\d+$') { throw "The version number is not valid: '$v'" }
     return $v
 }
+
+function Test-ReleaseWorkflow { return (Test-Path (Join-Path $Root ".github\workflows\release.yml")) }
 
 # -Ask: used right after 'Finish work'; asks first and stays quiet if already published
 function Publish-Tag([switch]$Ask) {
     $version = Get-TagVersion
-    if (-not $version) { if (-not $Ask) { Write-Warn "No VERSION file. Nothing to publish." }; return }
+    if (-not $version) { if (-not $Ask) { Write-Warn "No version number found. Nothing to publish." }; return }
     $tag = "v$version"
     Invoke-Git fetch origin --tags --quiet | Out-Null
     if (Invoke-Git tag -l $tag) {
@@ -978,7 +980,13 @@ function Publish-Tag([switch]$Ask) {
     }
     Invoke-Step "git tag" { git tag -a $tag -m "Release $version" }
     Invoke-Step "git push tag" { git push -q origin $tag }
-    Write-Ok "Published $tag. Open the update page on the server to install it."
+    if (Test-ReleaseWorkflow) {
+        $repo = Get-GitHubRepo
+        Write-Ok "Published $tag. GitHub now builds and publishes the files (about 10 minutes)."
+        Write-Ok "Progress: https://github.com/$repo/actions"
+    } else {
+        Write-Ok "Published $tag. Open the update page on the server to install it."
+    }
 }
 
 function Invoke-Publish {
@@ -1096,6 +1104,42 @@ function Initialize-UpdateKeys {
     $ok2 = ($LASTEXITCODE -eq 0)
     if ($ok1 -and $ok2) { Write-Ok "Secrets ADUP_SIGNING_KEY and ADUP_CONTENT_KEY are set in $repo." }
     else { throw "Setting the GitHub secrets failed (see above)." }
+    Initialize-ReleasesAccess $repo
+}
+
+# The public releases repository (<repo>-Releases) and the token that lets GitHub publish into it
+function Initialize-ReleasesAccess([string]$Repo) {
+    $releases = "$Repo-Releases"
+    Write-Step "Releases repository $releases"
+    & gh repo view $releases *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warn "It does not exist yet. It is PUBLIC: it only gets the encrypted .adup files."
+        if (Read-YesNo "Create $releases now?" $true) {
+            Invoke-Step "gh repo create" { gh repo create $releases --public --add-readme --description "Update packages (encrypted, signed)" }
+        }
+    } else { Write-Ok "Exists." }
+
+    $names = @(& gh secret list --repo $Repo 2>$null | ForEach-Object { ($_ -split "\s+")[0] })
+    if ($names -contains "RELEASES_TOKEN") {
+        Write-Ok "Secret RELEASES_TOKEN is set in $Repo."
+        if (-not (Read-YesNo "Replace it with a new token?" $false)) { return }
+    }
+    Write-Host ""
+    Write-Info "GitHub needs a token to publish into $releases. Make it once (it can serve all products):"
+    Write-Info "  1. Open  https://github.com/settings/personal-access-tokens/new"
+    Write-Info "  2. Token name: releases    Expiration: No expiration"
+    Write-Info "  3. Repository access: Only select repositories -> every *-Releases repository"
+    Write-Info "  4. Permissions -> Repository permissions -> Contents: Read and write"
+    Write-Info "  5. Generate token, copy it, and paste it here (it is not shown)."
+    $secure = Read-Host "   Token (Enter = later)" -AsSecureString
+    $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+    try { $token = [Runtime.InteropServices.Marshal]::PtrToStringBSTR($bstr) }
+    finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
+    if ([string]::IsNullOrWhiteSpace($token)) { Write-Warn "Skipped. Run option K again when you have the token."; return }
+    gh secret set RELEASES_TOKEN --repo $Repo --body $token.Trim()
+    $ok = ($LASTEXITCODE -eq 0)
+    $token = $null
+    if ($ok) { Write-Ok "Secret RELEASES_TOKEN is set in $Repo." } else { throw "Setting RELEASES_TOKEN failed (see above)." }
 }
 
 
