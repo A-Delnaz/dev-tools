@@ -1,0 +1,23 @@
+{
+  "type": "auto",
+  "port": 8000,
+  "python": "3.13",
+  "env": { "APP_DEV": "1" },
+
+  "setup_commands": [ "sync_admin_group" ],
+  "seed_commands": [ "seed_asset_types", "seed_brands" ],
+
+  "dotnet_sdk": "10",
+  "launch_profile": "http",
+  "restart_exit_code": 42,
+
+  "work_branch": "dev",
+  "publish_branch": "main",
+  "release_mode": "",
+
+  "tools": [
+    { "title": "Build release", "script": "installer\\release.ps1", "args": "-Action build", "command": "release" }
+  ],
+
+  "secret_patterns": [ ".env", "*/.env", "*.sqlite3", "*.pfx", "*.key", "*.pem" ]
+}
