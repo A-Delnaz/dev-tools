@@ -1,5 +1,5 @@
 # =================================================================
-#  dev.ps1 v2.0.1 - one developer tool for every project
+#  dev.ps1 v2.0.2 - one developer tool for every project
 #
 #  Started by dev.cmd in the project folder. This file is NOT copied
 #  into projects: it lives in github.com/A-Delnaz/dev-tools and dev.cmd
@@ -23,7 +23,7 @@ param(
     [string]$Command = ""
 )
 
-$ToolVersion = "2.0.1"
+$ToolVersion = "2.0.2"
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -713,17 +713,22 @@ function Invoke-SeedOnce {
 }
 
 # Checks two things in one go:
+#   - the cookies have their own names (otherwise two sites on this PC log each other out,
+#     or the forms of one site fail with a CSRF error after the other site was opened)
 #   - an admin user exists (sites without django.contrib.auth need none)
-#   - the session cookie has its own name (otherwise two sites on this PC log each other out)
 function Confirm-DjangoBasics {
     if (-not $IsDjango) { return }
     $code = "from django.apps import apps; from django.conf import settings as s; " +
-            "print('COOKIE=' + s.SESSION_COOKIE_NAME); " +
+            "print('SESSION=' + (s.SESSION_COOKIE_NAME if apps.is_installed('django.contrib.sessions') else '-')); " +
+            "print('CSRF=' + s.CSRF_COOKIE_NAME); " +
             "print('SU=NA' if not apps.is_installed('django.contrib.auth') else 'SU=' + str(int(__import__('django.contrib.auth', fromlist=['g']).get_user_model().objects.filter(is_superuser=True).exists())))"
     $out = (Invoke-Manage @("shell", "-v", "0", "-c", $code)) -join "`n"
-    if ($out -match "COOKIE=sessionid\b") {
-        Write-Warn "This site uses the default cookie name 'sessionid'. If two sites run on this PC,"
-        Write-Warn "logging in to one logs you out of the other. Ask Claude to set SESSION_COOKIE_NAME."
+    $default = @()
+    if ($out -match "SESSION=sessionid\b") { $default += "SESSION_COOKIE_NAME" }
+    if ($out -match "CSRF=csrftoken\b")    { $default += "CSRF_COOKIE_NAME" }
+    if ($default.Count -gt 0) {
+        Write-Warn "This site uses Django's default cookie names ($($default -join ', '))."
+        Write-Warn "If two sites run on this PC, they disturb each other. Ask Claude to give them own names."
     }
     if ($out -match "SU=(1|NA)") { return }
     Write-Step "No admin user on this PC yet. Create one:"
