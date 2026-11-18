@@ -7,8 +7,8 @@ If a project is not in this list, ask the user before adding licences or the upd
 |---|---|---|---|---|---|---|
 | Security-Reports | Software (Django, Windows server) | **Yes** | `security-reports` | none yet (one licence = whole program) | Security-Reports-Releases | 8002 |
 | Network-Status | Software (Django, Ubuntu server) | **Yes** | `network-status` | none yet | Network-Status-Releases (not created yet) | 8000 |
-| Domainator | Software (.NET, Windows server) | **Yes, modular** | `domainator` | proposed: `aduc`, `ca`, `dns`, `gpo`, `devices`, `events` (to be confirmed by the user) | Domainator-Releases | 5069 |
-| Shadow-GameNet | Management app of the user's game-net | **Not decided** (ask the user) | — | — | — | 8001 |
+| Domainator | Software (.NET, Windows server) | **Yes, modular** | `domainator` | `ca` (certificates), `dns`, `gpo` (Group Policy), `aduc` (Users & Computers). Later: `wsus` and other Microsoft services. Devices, events, jobs and settings belong to the base (always on). | Domainator-Releases | 5069 |
+| Shadow-GameNet | Management app of the user's own game-net | No (user's own; may change later) | — | — | — | 8001 |
 | ShadowGN-WebSite | Public website | No | — | — | — | 8003 |
 | Raja-Lightning | Online shop (Docker, updates itself from GitHub) | No | — | — | — | — |
 
