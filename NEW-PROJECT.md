@@ -48,3 +48,4 @@ Read docs/UPDATES-AND-LICENSES.md in this repository first. It has every decisio
 updates (.adup packages, release repositories, mirror) and licences (.adlic files,
 installation code, modules, trial), the file formats, and the status of each part.
 Until a part is marked done there, keep the project's current update method.
+A new licensed product also gets a line in mirror/products.json (its public releases repository).

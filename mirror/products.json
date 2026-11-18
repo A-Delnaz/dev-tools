@@ -1,0 +1,6 @@
+{
+  "_comment": "Public release repositories the mirror copies to the shared folder. Read by every mirror on every run, so a new product needs no change on the mirror PCs. Folder = subfolder of the shared folder.",
+  "products": [
+    { "repo": "A-Delnaz/Security-Reports-Releases", "folder": "Security-Reports" }
+  ]
+}

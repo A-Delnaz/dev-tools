@@ -124,6 +124,7 @@ dev.cmd zip        زیپ سورس
 - راهنمای استاندارد پروژه‌ها برای Claude: `NEW-PROJECT.md`
 - طرح سیستم آپدیت و مجوز: `docs/UPDATES-AND-LICENSES.md`
 - ابزار فایل آپدیت (`.adup`): `release/adup.py`
+- برنامه‌ی واسط آپدیت برای شبکه‌های بدون اینترنت: `mirror/README.md`
 
 - **2.2.0**: گزینه‌ی 9 نسخه را از `releases.json` یا `installer\version.txt` هم می‌خواند؛ گزینه‌ی K مخزن انتشار و `RELEASES_TOKEN` را هم آماده می‌کند.
 - **2.1.0**: گزینه‌ی **K**: فروشگاه کلید روی فلش (قفل با رمز)، فایل `update-keys.json` محصول و فرستادن کلیدها به Secrets گیت‌هاب.
