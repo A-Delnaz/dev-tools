@@ -23,7 +23,7 @@ Read this when a new project starts, or when an existing project is moved to thi
 ## 3. dev.json rules
 
 - `port`: a port that no other project of the user has. Known ports:
-  CCTV-Status 8000, Shadow-GameNet 8001, Security-Reports 8002, ShadowGN-WebSite 8003, Domainator 5069.
+  Network-Status 8000 (repository renamed from CCTV-Status), Shadow-GameNet 8001, Security-Reports 8002, ShadowGN-WebSite 8003, Domainator 5069.
   New projects: 8004 and up (and add them to this list).
 - `setup_commands` must be safe to run again; `seed_commands` only create default data.
 - Extra project scripts (build, release) go into `tools`, not into a new launcher.
@@ -44,6 +44,7 @@ Read this when a new project starts, or when an existing project is moved to thi
 
 ## 6. Updates for installed servers
 
-The shared update system (signed and encrypted packages, release repository per product,
-licence with support end date, update folder for offline networks) is being built.
-Until it is ready, keep the project's current update method.
+Read docs/UPDATES-AND-LICENSES.md in this repository first. It has every decision about
+updates (.adup packages, release repositories, mirror) and licences (.adlic files,
+installation code, modules, trial), the file formats, and the status of each part.
+Until a part is marked done there, keep the project's current update method.
