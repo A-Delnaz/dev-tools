@@ -225,6 +225,12 @@ def unpack(path, out_path, content_key, public_key, product=None):
 #  Folder index (for the "web address" source)
 # ---------------------------------------------------------------
 
+def requirements_hash(text):
+    """Hash of requirements.txt: lines without comments, lower case, sorted (same in every product)."""
+    lines = sorted({l.strip().lower() for l in text.splitlines() if l.strip() and not l.strip().startswith("#")})
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
 def version_key(text):
     parts = []
     for p in str(text or "").split("."):
@@ -243,7 +249,9 @@ def write_index(folder, content_key, public_key):
             continue
         product = product or h.get("product")
         versions.append({"version": h["version"], "file": path.name, "size": path.stat().st_size,
-                         "released_at": h.get("released_at", "")})
+                         "released_at": h.get("released_at", ""),
+                         "requirements_sha256": h.get("requirements_sha256", ""),
+                         "releases": h.get("releases", [])})
     versions.sort(key=lambda v: version_key(v["version"]), reverse=True)
     index = {"product": product, "versions": versions}
     (folder / "index.json").write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -303,9 +311,7 @@ def main(argv=None):
             if args.releases:
                 fields["releases"] = json.loads(Path(args.releases).read_text(encoding="utf-8-sig"))
             if args.requirements:
-                lines = sorted({l.strip().lower() for l in Path(args.requirements).read_text(encoding="utf-8-sig").splitlines()
-                                if l.strip() and not l.strip().startswith("#")})
-                fields["requirements_sha256"] = hashlib.sha256("\n".join(lines).encode()).hexdigest()
+                fields["requirements_sha256"] = requirements_hash(Path(args.requirements).read_text(encoding="utf-8-sig"))
             h = pack(args.payload, args.out, fields,
                      _key(args, "signing_key", "ADUP_SIGNING_KEY"), _key(args, "content_key", "ADUP_CONTENT_KEY"))
             print(f"Created {args.out}  ({h['product']} {h['version']}, payload {h['payload_size']:,} bytes)")

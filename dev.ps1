@@ -1,5 +1,5 @@
 # =================================================================
-#  dev.ps1 v2.0.2 - one developer tool for every project
+#  dev.ps1 v2.1.0 - one developer tool for every project
 #
 #  Started by dev.cmd in the project folder. This file is NOT copied
 #  into projects: it lives in github.com/A-Delnaz/dev-tools and dev.cmd
@@ -23,7 +23,7 @@ param(
     [string]$Command = ""
 )
 
-$ToolVersion = "2.0.2"
+$ToolVersion = "2.1.0"
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -72,6 +72,9 @@ $Config = [pscustomobject]@{
     work_branch       = ""         # branch Claude writes to (for example "dev")
     publish_branch    = ""         # branch the servers install from (for example "main")
     release_mode      = ""         # "" = automatic | "branch" | "tag" | "none"
+    # Update packages (.adup) of licensed products, see docs/UPDATES-AND-LICENSES.md
+    product           = ""         # product id, for example "security-reports" (empty = not a licensed product)
+    product_name      = ""         # for example "Security Reports"
     # Extra menu items: [{ "title": "...", "script": "path\\to\\script.ps1", "args": "...", "command": "name" }]
     tools             = @()
     secret_patterns   = @(".env", "*/.env", "*.sqlite3", "*.pfx", "*.key", "*.pem")
@@ -988,6 +991,115 @@ function Invoke-Publish {
 
 
 # ---------------------------------------------------------------
+#  Update keys (licensed products only; see docs/UPDATES-AND-LICENSES.md)
+#  The key store is ONE file on a USB stick, locked with a passphrase (release\keys.py).
+#  Only its path is remembered on this PC.
+# ---------------------------------------------------------------
+
+$KeyStoreRemember = Join-Path $DataDir "keystore-path.txt"
+
+# A Python that has the "cryptography" package: the project's venv, or the Python of this PC
+function Get-ReleasePython {
+    $candidates = @()
+    if (Test-Path $VenvPython) { $candidates += ,@($VenvPython) }
+    if (Get-Command py -ErrorAction SilentlyContinue) { $candidates += ,@("py", "-3") }
+    if (Get-Command python -ErrorAction SilentlyContinue) { $candidates += ,@("python") }
+    foreach ($c in $candidates) {
+        $exe = $c[0]; $pre = @($c | Select-Object -Skip 1)
+        & $exe @pre -c "import cryptography" 2>$null
+        if ($LASTEXITCODE -eq 0) { return [pscustomobject]@{ Exe = $exe; Pre = $pre } }
+    }
+    if ($candidates.Count -eq 0) { throw "Python is not installed on this PC." }
+    $exe = $candidates[-1][0]; $pre = @($candidates[-1] | Select-Object -Skip 1)
+    Write-Step "Installing the Python package 'cryptography'"
+    Invoke-Step "pip install cryptography" { & $exe @pre -m pip install --user --quiet cryptography }
+    return [pscustomobject]@{ Exe = $exe; Pre = $pre }
+}
+
+# Runs release\<script>.py of this tool. Output lines are returned (prompts go to the screen).
+function Invoke-ReleaseScript([string]$Script, [string[]]$ScriptArgs) {
+    $py = Get-ReleasePython
+    $pre = @($py.Pre)
+    $out = & $py.Exe @pre (Join-Path $ToolDir "release\$Script.py") @ScriptArgs
+    $script:ReleaseExit = $LASTEXITCODE
+    return $out
+}
+
+# Where the key store is. Asks once and remembers the path on this PC.
+function Get-KeyStorePath {
+    $path = ""
+    if (Test-Path $KeyStoreRemember) { $path = (Get-Content $KeyStoreRemember -Raw).Trim() }
+    if ($path -and (Test-Path $path)) {
+        if (Read-YesNo "Use the key store $path ?" $true) { return $path }
+    } elseif ($path) {
+        Write-Warn "The key store is not at $path (is the USB stick plugged in?)."
+    }
+    Write-Host ""
+    Write-Info "The key store is one file on your USB stick, for example  E:\A-Delnaz-Keys\a-delnaz.adkeys"
+    $path = (Read-Host "   Path of the key store file").Trim().Trim('"')
+    if (-not $path) { throw "No key store chosen." }
+    if (-not (Test-Path $path)) {
+        Write-Warn "There is no key store at $path."
+        if (-not (Read-YesNo "Create a NEW key store there? (only once, ever)" $false)) { throw "Cancelled." }
+        Invoke-ReleaseScript "keys" @("init", "--store", $path) | Out-Host
+        if ($script:ReleaseExit -ne 0) { throw "The key store was not created." }
+    }
+    Write-Utf8File $KeyStoreRemember $path
+    return $path
+}
+
+# owner/name of the GitHub repository of this project
+function Get-GitHubRepo {
+    $url = Invoke-Git remote get-url origin | Select-Object -First 1
+    $m = [regex]::Match([string]$url, 'github\.com[:/]([^/]+)/([^/\s]+?)(\.git)?$')
+    if ($m.Success) { return "$($m.Groups[1].Value)/$($m.Groups[2].Value)" }
+    return $null
+}
+
+function Test-GhReady {
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $false }
+    & gh auth status 2>$null | Out-Null
+    return ($LASTEXITCODE -eq 0)
+}
+
+# Makes update-keys.json for this product and (if wanted) puts the keys into the GitHub secrets
+function Initialize-UpdateKeys {
+    if (-not $Config.product) { Write-Warn "dev.json has no 'product': this is not a licensed product."; return }
+    $store = Get-KeyStorePath
+    $keyFile = Join-Path $Root "update-keys.json"
+
+    Write-Step "Key file of '$($Config.product)'"
+    Invoke-ReleaseScript "keys" @("product", "--store", $store, "--product", [string]$Config.product, "--out", $keyFile) | Out-Host
+    if ($script:ReleaseExit -ne 0) { throw "update-keys.json was not made." }
+    if ((Invoke-Git status --porcelain -- update-keys.json | Where-Object { $_ })) {
+        Write-Warn "update-keys.json is new: send it to GitHub with 'Finish work'."
+    }
+
+    $repo = Get-GitHubRepo
+    Write-Step "GitHub secrets of $repo (needed to build packages on GitHub)"
+    if (-not (Test-GhReady)) {
+        Write-Warn "The GitHub command line tool (gh) is not installed or not signed in."
+        Write-Warn "Install it once:   winget install GitHub.cli"
+        Write-Warn "Then sign in:      gh auth login"
+        Write-Warn "Then run this option (K) again. Nothing else is needed now."
+        return
+    }
+    if (-not (Read-YesNo "Put the update keys into the secrets of $repo now?" $true)) { return }
+    $content = (Get-Content $keyFile -Raw -Encoding UTF8 | ConvertFrom-Json).content_key
+    $signing = Invoke-ReleaseScript "keys" @("secret", "--store", $store, "--name", "update") | Select-Object -Last 1
+    if ($script:ReleaseExit -ne 0 -or -not $signing) { throw "The key store could not be opened." }
+    # --body (not a pipe): a pipe could add a line break to the key
+    gh secret set ADUP_SIGNING_KEY --repo $repo --body ([string]$signing).Trim()
+    $ok1 = ($LASTEXITCODE -eq 0)
+    $signing = $null
+    gh secret set ADUP_CONTENT_KEY --repo $repo --body $content
+    $ok2 = ($LASTEXITCODE -eq 0)
+    if ($ok1 -and $ok2) { Write-Ok "Secrets ADUP_SIGNING_KEY and ADUP_CONTENT_KEY are set in $repo." }
+    else { throw "Setting the GitHub secrets failed (see above)." }
+}
+
+
+# ---------------------------------------------------------------
 #  Status, source zip, extra tools
 # ---------------------------------------------------------------
 
@@ -1119,6 +1231,7 @@ function Get-MenuItems {
     if ($ReleaseMode -eq "branch") { Add-Item 9 "Publish         send '$($Config.work_branch)' to '$($Config.publish_branch)' (servers)" { Publish-Branch } }
     if ($ReleaseMode -eq "tag")    { Add-Item 9 "Publish version (only if you skipped it in 'Finish work')" { Publish-Tag } }
     Add-Item 10 "Source zip      code as a zip on the desktop (for a new chat)" { New-SourceZip }
+    if ($Config.product) { Add-Item "K" "Update keys     key file of this product, GitHub secrets (key store on USB)" { Initialize-UpdateKeys } }
     $n = 11
     foreach ($t in Get-Tools) {
         Add-Item $n $t.title $null $t
@@ -1167,8 +1280,9 @@ function Invoke-DevCommand([string]$Name) {
         "history" { Show-History | Out-Host; return 0 }
         "publish" { Invoke-Publish | Out-Host; return 0 }
         "zip"     { New-SourceZip | Out-Host; return 0 }
+        "keys"    { Initialize-UpdateKeys | Out-Host; return 0 }
         default {
-            $names = @("start", "run", "pull", "push", "status", "open", "migrate", "seed", "build", "history", "publish", "zip")
+            $names = @("start", "run", "pull", "push", "status", "open", "migrate", "seed", "build", "history", "publish", "zip", "keys")
             $names += @(Get-Tools | Where-Object { $_.command } | ForEach-Object { $_.command })
             Write-Warn "Unknown command '$Name'. Use: $($names -join ', ')"
             return 1
