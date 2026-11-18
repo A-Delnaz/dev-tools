@@ -1,5 +1,5 @@
 # =================================================================
-#  dev.ps1 v2.0 - one developer tool for every project
+#  dev.ps1 v2.0.1 - one developer tool for every project
 #
 #  Started by dev.cmd in the project folder. This file is NOT copied
 #  into projects: it lives in github.com/A-Delnaz/dev-tools and dev.cmd
@@ -23,7 +23,7 @@ param(
     [string]$Command = ""
 )
 
-$ToolVersion = "2.0.0"
+$ToolVersion = "2.0.1"
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -44,6 +44,11 @@ $PortsFile   = Join-Path $DataDir "ports.json"
 
 # Tells the project it runs on a developer PC (a project can then use a local test database)
 $env:APP_DEV = "1"
+
+# Python always reads and writes UTF-8 (Persian text). Without this, Python uses the old
+# Windows code page (cp1256) when its output goes through this tool, and Persian text fails.
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
 
 
 # ---------------------------------------------------------------
