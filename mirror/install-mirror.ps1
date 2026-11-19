@@ -56,9 +56,22 @@ try {
     $settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Hours 2)
     Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false -ErrorAction SilentlyContinue
     if ($account) {
-        $cred = Get-Credential -UserName $account -Message "Password of $account (for the scheduled task)"
+        # The password is asked here in this window (a separate Windows dialog often opens hidden behind it)
+        $secure = Read-Host "Password of $account (not shown while typing)" -AsSecureString
+        $plain = (New-Object System.Net.NetworkCredential("", $secure)).Password
+        if (-not $plain) { throw "No password given." }
+        # Check the account and password before the task is made
+        Add-Type -AssemblyName System.DirectoryServices.AccountManagement
+        $parts = $account -split "\\", 2
+        $ctxType = if ($parts.Count -eq 2 -and $parts[0] -ne $env:COMPUTERNAME -and $parts[0] -ne ".") { "Domain" } else { "Machine" }
+        $ctx = if ($ctxType -eq "Domain") { New-Object System.DirectoryServices.AccountManagement.PrincipalContext($ctxType, $parts[0]) } `
+               else { New-Object System.DirectoryServices.AccountManagement.PrincipalContext($ctxType) }
+        $userOnly = $parts[-1]
+        if (-not $ctx.ValidateCredentials($userOnly, $plain)) { throw "User name or password of $account is not correct." }
+        Say "Account and password are correct." Green
         Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($hourly, $boot) -Settings $settings `
-            -User $account -Password $cred.GetNetworkCredential().Password -RunLevel Highest | Out-Null
+            -User $account -Password $plain -RunLevel Highest | Out-Null
+        $plain = $null
     } else {
         Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger @($hourly, $boot) -Settings $settings `
             -User "SYSTEM" -RunLevel Highest | Out-Null
@@ -66,7 +79,11 @@ try {
     Say ""
     Say "Installed. First run now ..." Green
     Start-ScheduledTask -TaskName $TaskName
-    Start-Sleep -Seconds 20
+    Say "Waiting for the first run (up to 60 seconds) ..." Gray
+    for ($i = 0; $i -lt 12; $i++) {
+        Start-Sleep -Seconds 5
+        if ((Get-ScheduledTask -TaskName $TaskName).State -ne "Running" -and $i -ge 1) { break }
+    }
     $log = Join-Path $Target "mirror.log"
     if (Test-Path $log) { Get-Content $log -Tail 10 | ForEach-Object { Say "   $_" } }
     Say ""
