@@ -110,23 +110,36 @@ def unlock(path, passphrase):
 
 
 def product_keys(store, product, out):
-    """Writes the key file of a product. Keeps an existing file (its content key must stay the same)."""
+    """
+    Writes the key file of a product: update keys and licence keys.
+    An existing file is kept (its content key and licence secret must never change);
+    keys that are missing in it (for example the licence keys of an older file) are added.
+    Returns (data, "created" | "updated" | "kept").
+    """
     out = Path(out)
-    public = read_store(store)["public"]["update"]
+    public = read_store(store)["public"]
     if out.exists():
-        current = json.loads(out.read_text(encoding="utf-8"))
-        if current.get("public_key") != public:
+        data = json.loads(out.read_text(encoding="utf-8"))
+        if data.get("public_key") != public["update"]:
             raise KeyError_(f"{out} was made with another key store. Use that store, or ask for help.")
-        return current, False
-    data = {
-        "_comment": "Keys of the update packages (.adup). Public: safe in the repository. "
-                    "Made by dev.cmd 'Update keys'. Never change the content key of a released product.",
-        "product": product,
-        "public_key": public,
-        "content_key": b64(os.urandom(32)),
-    }
-    out.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    return data, True
+        if data.get("license_public_key") and data["license_public_key"] != public["license"]:
+            raise KeyError_(f"The licence key in {out} belongs to another key store.")
+        if data.get("license_public_key") and data.get("license_secret"):
+            return data, "kept"
+        data["license_public_key"] = public["license"]
+        data["license_secret"] = b64(os.urandom(32))
+        state = "updated"
+    else:
+        data = {"product": product, "public_key": public["update"], "content_key": b64(os.urandom(32)),
+                "license_public_key": public["license"], "license_secret": b64(os.urandom(32))}
+        state = "created"
+    data["_comment"] = ("Keys of the update packages (.adup) and licence files (.adlic). Public: safe in the "
+                        "repository. Made by dev.cmd option K. Never change the content key or the licence secret "
+                        "of a released product.")
+    ordered = {k: data[k] for k in ("_comment", "product", "public_key", "content_key", "license_public_key", "license_secret")}
+    ordered.update({k: v for k, v in data.items() if k not in ordered})
+    out.write_text(json.dumps(ordered, indent=2) + "\n", encoding="utf-8")
+    return ordered, state
 
 
 def _passphrase(confirm=False):
@@ -170,8 +183,8 @@ def main(argv=None):
             print(f"Key store created: {args.store}", file=sys.stderr)
             print("Make a backup copy of this file on a second USB stick now.", file=sys.stderr)
         elif args.cmd == "product":
-            data, made = product_keys(args.store, args.product, args.out)
-            print(("Created " if made else "Kept existing ") + args.out, file=sys.stderr)
+            data, state = product_keys(args.store, args.product, args.out)
+            print({"created": "Created ", "updated": "Added the licence keys to ", "kept": "Kept existing "}[state] + args.out, file=sys.stderr)
         elif args.cmd == "secret":
             print(b64(unlock(args.store, _passphrase())[args.name]))
         elif args.cmd == "check":

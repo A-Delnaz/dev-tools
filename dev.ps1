@@ -1,5 +1,5 @@
 # =================================================================
-#  dev.ps1 v2.2.1 - one developer tool for every project
+#  dev.ps1 v2.3.0 - one developer tool for every project
 #
 #  Started by dev.cmd in the project folder. This file is NOT copied
 #  into projects: it lives in github.com/A-Delnaz/dev-tools and dev.cmd
@@ -23,7 +23,7 @@ param(
     [string]$Command = ""
 )
 
-$ToolVersion = "2.2.1"
+$ToolVersion = "2.3.0"
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -1093,7 +1093,7 @@ function Initialize-UpdateKeys {
     Invoke-ReleaseScript "keys" @("product", "--store", $store, "--product", [string]$Config.product, "--out", $keyFile) | Out-Host
     if ($script:ReleaseExit -ne 0) { throw "update-keys.json was not made." }
     if ((Invoke-Git status --porcelain -- update-keys.json | Where-Object { $_ })) {
-        Write-Warn "update-keys.json is new: send it to GitHub with 'Finish work'."
+        Write-Warn "update-keys.json is new or has new keys: send it to GitHub with 'Finish work'."
     }
 
     $repo = Get-GitHubRepo
@@ -1118,6 +1118,26 @@ function Initialize-UpdateKeys {
     if ($ok1 -and $ok2) { Write-Ok "Secrets ADUP_SIGNING_KEY and ADUP_CONTENT_KEY are set in $repo." }
     else { throw "Setting the GitHub secrets failed (see above)." }
     Initialize-ReleasesAccess $repo
+}
+
+# Makes a licence file (.adlic) for one installation of this product (asks everything).
+# Until the License-Manager program exists, this is the way to issue licences.
+function New-Licence {
+    if (-not $Config.product) { Write-Warn "dev.json has no 'product': this is not a licensed product."; return }
+    $keyFile = Join-Path $Root "update-keys.json"
+    if (-not (Test-Path $keyFile) -or -not ((Get-Content $keyFile -Raw) -match '"license_secret"')) {
+        Write-Warn "update-keys.json has no licence keys yet. Run option K once, then 'Finish work'."
+        return
+    }
+    $store = Get-KeyStorePath
+    $desktop = [Environment]::GetFolderPath("Desktop")
+    if (-not $desktop) { $desktop = $Root }
+    $outDir = Join-Path $desktop "Licences"
+    if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir | Out-Null }
+    Write-Step "New licence for '$($Config.product)'"
+    Write-Info "The install code is on the licence page of the installation (Settings > Licence)."
+    Invoke-ReleaseScript "adlic" @("wizard", "--store", $store, "--keys", $keyFile, "--out-dir", $outDir) | Out-Host
+    if ($script:ReleaseExit -eq 0) { Write-Ok "The licence is in $outDir" }
 }
 
 # The public releases repository (<repo>-Releases) and the token that lets GitHub publish into it
@@ -1289,6 +1309,7 @@ function Get-MenuItems {
     if ($ReleaseMode -eq "tag")    { Add-Item 9 "Publish version (only if you skipped it in 'Finish work')" { Publish-Tag } }
     Add-Item 10 "Source zip      code as a zip on the desktop (for a new chat)" { New-SourceZip }
     if ($Config.product) { Add-Item "K" "Update keys     key file of this product, GitHub secrets (key store on USB)" { Initialize-UpdateKeys } }
+    if ($Config.product) { Add-Item "L" "Licence         make a licence file for an installation (install code)" { New-Licence } }
     $n = 11
     foreach ($t in Get-Tools) {
         Add-Item $n $t.title $null $t
@@ -1338,8 +1359,9 @@ function Invoke-DevCommand([string]$Name) {
         "publish" { Invoke-Publish | Out-Host; return 0 }
         "zip"     { New-SourceZip | Out-Host; return 0 }
         "keys"    { Initialize-UpdateKeys | Out-Host; return 0 }
+        "licence" { New-Licence | Out-Host; return 0 }
         default {
-            $names = @("start", "run", "pull", "push", "status", "open", "migrate", "seed", "build", "history", "publish", "zip", "keys")
+            $names = @("start", "run", "pull", "push", "status", "open", "migrate", "seed", "build", "history", "publish", "zip", "keys", "licence")
             $names += @(Get-Tools | Where-Object { $_.command } | ForEach-Object { $_.command })
             Write-Warn "Unknown command '$Name'. Use: $($names -join ', ')"
             return 1

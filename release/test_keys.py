@@ -39,15 +39,26 @@ class KeyStoreTests(unittest.TestCase):
 
     def test_product_file_is_kept(self):
         out = self.dir / "update-keys.json"
-        first, made = keys.product_keys(self.store, "security-reports", out)
-        self.assertTrue(made)
-        second, made = keys.product_keys(self.store, "security-reports", out)
-        self.assertFalse(made)
+        first, state = keys.product_keys(self.store, "security-reports", out)
+        self.assertEqual(state, "created")
+        second, state = keys.product_keys(self.store, "security-reports", out)
+        self.assertEqual(state, "kept")
         self.assertEqual(first["content_key"], second["content_key"])
         other = self.dir / "other.adkeys"
         keys.create_store(other, PASS)
         with self.assertRaises(keys.KeyError_):
             keys.product_keys(other, "security-reports", out)
+
+    def test_old_file_gets_licence_keys(self):
+        """update-keys.json of 2.1 (without licence keys): the keys are added, the content key stays."""
+        out = self.dir / "update-keys.json"
+        public = keys.read_store(self.store)["public"]
+        out.write_text(json.dumps({"product": "x", "public_key": public["update"], "content_key": "C" * 43 + "="}))
+        data, state = keys.product_keys(self.store, "x", out)
+        self.assertEqual(state, "updated")
+        self.assertEqual(data["content_key"], "C" * 43 + "=")
+        self.assertEqual(data["license_public_key"], public["license"])
+        self.assertEqual(keys.product_keys(self.store, "x", out)[1], "kept")
 
     def test_signed_package_matches_product_file(self):
         out = self.dir / "update-keys.json"
