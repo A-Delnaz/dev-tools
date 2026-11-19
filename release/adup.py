@@ -266,7 +266,17 @@ def _key(args, name, env):
     return b64key(getattr(args, name) or os.environ.get(env, ""), env)
 
 
+def _utf8_console():
+    """Windows consoles (also on GitHub) use an old code page: Persian text would crash print()."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except (AttributeError, ValueError):
+            pass
+
+
 def main(argv=None):
+    _utf8_console()
     p = argparse.ArgumentParser(description="A-Delnaz update package (.adup)")
     sub = p.add_subparsers(dest="cmd", required=True)
 
