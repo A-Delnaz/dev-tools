@@ -1,5 +1,5 @@
 # =================================================================
-#  dev.ps1 v2.2.0 - one developer tool for every project
+#  dev.ps1 v2.2.1 - one developer tool for every project
 #
 #  Started by dev.cmd in the project folder. This file is NOT copied
 #  into projects: it lives in github.com/A-Delnaz/dev-tools and dev.cmd
@@ -23,7 +23,7 @@ param(
     [string]$Command = ""
 )
 
-$ToolVersion = "2.2.0"
+$ToolVersion = "2.2.1"
 $ErrorActionPreference = "Continue"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
 $OutputEncoding = [System.Text.Encoding]::UTF8
@@ -1033,20 +1033,33 @@ function Invoke-ReleaseScript([string]$Script, [string[]]$ScriptArgs) {
     return $out
 }
 
+# A folder may be given instead of the file: then the file in that folder is meant
+function Resolve-KeyStoreFile([string]$Path) {
+    if ($Path -and (Test-Path -LiteralPath $Path -PathType Container)) { return (Join-Path $Path "a-delnaz.adkeys") }
+    return $Path
+}
+
 # Where the key store is. Asks once and remembers the path on this PC.
 function Get-KeyStorePath {
     $path = ""
-    if (Test-Path $KeyStoreRemember) { $path = (Get-Content $KeyStoreRemember -Raw).Trim() }
-    if ($path -and (Test-Path $path)) {
+    if (Test-Path $KeyStoreRemember) { $path = Resolve-KeyStoreFile (Get-Content $KeyStoreRemember -Raw).Trim() }
+    if ($path -and (Test-Path -LiteralPath $path -PathType Leaf)) {
         if (Read-YesNo "Use the key store $path ?" $true) { return $path }
     } elseif ($path) {
         Write-Warn "The key store is not at $path (is the USB stick plugged in?)."
     }
     Write-Host ""
     Write-Info "The key store is one file on your USB stick, for example  E:\A-Delnaz-Keys\a-delnaz.adkeys"
-    $path = (Read-Host "   Path of the key store file").Trim().Trim('"')
+    Write-Info "(a folder is fine too: then the file a-delnaz.adkeys in that folder is used)"
+    $path = (Read-Host "   Path of the key store file or folder").Trim().Trim('"')
     if (-not $path) { throw "No key store chosen." }
-    if (-not (Test-Path $path)) {
+    $path = Resolve-KeyStoreFile $path
+    Write-Info "Key store file: $path"
+    if ($path -match '^[Cc]:') {
+        Write-Warn "This is on drive C:. If Windows is installed again, the keys are lost."
+        Write-Warn "Keep a copy on a USB stick (or two) right after it is made."
+    }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         Write-Warn "There is no key store at $path."
         if (-not (Read-YesNo "Create a NEW key store there? (only once, ever)" $false)) { throw "Cancelled." }
         Invoke-ReleaseScript "keys" @("init", "--store", $path) | Out-Host

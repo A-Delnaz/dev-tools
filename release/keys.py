@@ -57,6 +57,8 @@ def _new_pair():
 
 def create_store(path, passphrase):
     path = Path(path)
+    if path.is_dir():
+        path = path / "a-delnaz.adkeys"
     if path.exists():
         raise KeyError_(f"{path} already exists. A key store is never overwritten.")
     if len(passphrase) < 10:
@@ -82,6 +84,8 @@ def create_store(path, passphrase):
 
 def read_store(path):
     path = Path(path)
+    if path.is_dir():
+        raise KeyError_(f"{path} is a folder. Give the key store FILE, for example {path / 'a-delnaz.adkeys'}")
     if not path.exists():
         raise KeyError_(f"Key store not found: {path}")
     try:
